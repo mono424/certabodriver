@@ -1,0 +1,3 @@
+enum CertaboConnectionType {
+  USB, BT
+}

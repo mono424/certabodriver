@@ -1,11 +1,18 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:certabodriver/CertaboBoardType.dart';
 import 'package:certabodriver/CertaboCommunicationClient.dart';
+import 'package:certabodriver/CertaboConnectionType.dart';
 import 'package:certabodriver/CertaboMessage.dart';
 import 'package:certabodriver/CertaboProtocol.dart';
 import 'package:certabodriver/IntegrityCheckType.dart';
 import 'package:certabodriver/LEDPattern.dart';
+
+export 'package:certabodriver/CertaboCommunicationClient.dart';
+export 'package:certabodriver/LEDPattern.dart';
+export 'package:certabodriver/CertaboBoardType.dart';
+export 'package:certabodriver/CertaboConnectionType.dart';
 
 class CertaboBoard {
   
@@ -40,8 +47,13 @@ class CertaboBoard {
   Stream<CertaboMessage> _inputStream;
   Stream<Map<String, List<int>>> _boardUpdateStream;
   List<int> _buffer;
+  CertaboBoardType _type = CertaboBoardType.Unknown;
 
   Map<String, List<int>> _currBoard = Map.fromEntries(CertaboProtocol.squares.map((e) => MapEntry(e, CertaboProtocol.emptyFieldId)));
+
+  CertaboBoardType get type {
+    return _type;
+  }
 
   Map<String, List<int>> get currBoard {
     return _currBoard;
@@ -58,13 +70,14 @@ class CertaboBoard {
     _boardUpdateStreamController = new StreamController<Map<String, List<int>>>();
     _inputStream = _inputStreamController.stream.asBroadcastStream();
     _boardUpdateStream = _boardUpdateStreamController.stream.asBroadcastStream();
-
     getInputStream().map(createBoardMap).listen(_newBoardState);
+
+    await getInputStream().first;
   }
 
   void _newBoardState(Map<String, List<int>> state) {
     // PieceId Whitelist
-    if (pieceIdWhitelist != null && pieceIdWhitelist.length > 0) {
+    if (_type != CertaboBoardType.Tabutronic && pieceIdWhitelist != null && pieceIdWhitelist.length > 0) {
       state = state.map((key, value) {
         if (pieceIdWhitelist.any((e) => CertaboProtocol.equalId(e, value))) {
           return MapEntry(key, value);
@@ -121,7 +134,39 @@ class CertaboBoard {
       _isWorking = true;
       try {
         _buffer = skipToNextStart(0, _buffer);
-        CertaboMessage message = CertaboMessage.parse(_buffer);
+
+        // Detect board type
+        if (_type == CertaboBoardType.Unknown) {
+          switch (_client.connectionType) {
+            case CertaboConnectionType.USB:
+              _type = CertaboMessageUSB.detect(_buffer);
+              break;
+            case CertaboConnectionType.BT:
+              _type = CertaboMessageBT.detect(_buffer);
+              break;
+            default:
+              throw Exception("Unknown board type");
+          }
+        }
+
+        if (_type == CertaboBoardType.Unknown) {
+          _buffer = skipToNextStart(1, _buffer);
+          continue;
+        }
+
+        // Parse message
+        CertaboMessage message;
+        switch (_client.connectionType) {
+          case CertaboConnectionType.USB:
+            message = CertaboMessageUSB.parse(_type, _buffer);
+            break;
+          case CertaboConnectionType.BT:
+            message = CertaboMessageBT.parse(_type, _buffer);
+            break;
+          default:
+            throw Exception("Unknown board type");
+        }
+
         _inputStreamController.add(message);
         _buffer.removeRange(0, message.length);
         //print("Received valid message");

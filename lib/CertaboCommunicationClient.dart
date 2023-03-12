@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:certabodriver/CertaboConnectionType.dart';
+
 class CertaboCommunicationClient {
+  final CertaboConnectionType connectionType;
   final Future<void> Function(Uint8List) send;
   final StreamController<Uint8List> _inputStreamController = StreamController<Uint8List>();
 
@@ -9,7 +12,7 @@ class CertaboCommunicationClient {
     return _inputStreamController.stream.asBroadcastStream();
   }
 
-  CertaboCommunicationClient(this.send);
+  CertaboCommunicationClient(this.connectionType, this.send);
 
   handleReceive(Uint8List message) {
     _inputStreamController.add(message);
