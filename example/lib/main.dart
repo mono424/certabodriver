@@ -16,20 +16,20 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: MyHomePage(),
+      home: MyHomePage(key: Key("home")),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key}) : super(key: key);
+  MyHomePage({required Key key}) : super(key: key);
 
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  CertaboBoard connectedBoard;
+  CertaboBoard? connectedBoard;
 
   void connect() async {
     List<UsbDevice> devices = await UsbSerial.listDevices();
@@ -38,8 +38,9 @@ class _MyHomePageState extends State<MyHomePage> {
       return;
     }
 
-    List<UsbDevice> dgtDevices = devices.where((d) => d.vid == 4292).toList();
-    UsbPort usbDevice = await dgtDevices[0].create();
+    List<UsbDevice> boardDevices = devices.where((d) => d.vid == 4292).toList();
+    UsbPort? usbDevice = await boardDevices[0].create();
+    if (usbDevice == null) return;
     await usbDevice.open();
 
     await usbDevice.setDTR(true);
@@ -47,10 +48,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
 	  usbDevice.setPortParameters(38400, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
 
-    CertaboCommunicationClient client = CertaboCommunicationClient(usbDevice.write);
-    usbDevice.inputStream.listen(client.handleReceive);
+    CertaboCommunicationClient client = CertaboCommunicationClient(CertaboConnectionType.USB, usbDevice.write);
+    usbDevice.inputStream!.listen(client.handleReceive);
     
-    if (dgtDevices.length > 0) {
+    if (boardDevices.length > 0) {
       // connect to board and initialize
       CertaboBoard nBoard = new CertaboBoard();
       await nBoard.init(client);
@@ -63,13 +64,13 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Map<String, List<int>> lastData;
+  Map<String, List<int>>? lastData;
 
   LEDPattern ledpattern = LEDPattern();
 
   void toggleLed(String square) {
     ledpattern.setSquare(square, !ledpattern.getSquare(square));
-    connectedBoard.setLEDs(ledpattern);
+    connectedBoard!.setLEDs(ledpattern);
     setState(() {});
   }
 
@@ -93,14 +94,14 @@ class _MyHomePageState extends State<MyHomePage> {
             builder: (context, AsyncSnapshot<Map<String, List<int>>> snapshot) {
               if (!snapshot.hasData && lastData == null) return Text("- no data -");
 
-              Map<String, List<int>> fieldUpdate = snapshot.data ?? lastData;
+              Map<String, List<int>>? fieldUpdate = snapshot.data ?? lastData;
               lastData = fieldUpdate;
               List<Widget> rows = [];
               
               for (var i = 0; i < 8; i++) {
                 List<Widget> cells = [];
                 for (var j = 0; j < 8; j++) {
-                    MapEntry<String, List<int>> entry = fieldUpdate.entries.toList()[i * 8 + j];
+                    MapEntry<String, List<int>> entry = fieldUpdate!.entries.toList()[i * 8 + j];
                     cells.add(
                       TextButton(
                         onPressed: () => toggleLed(entry.key),

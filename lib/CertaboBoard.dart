@@ -15,9 +15,6 @@ export 'package:certabodriver/CertaboBoardType.dart';
 export 'package:certabodriver/CertaboConnectionType.dart';
 
 class CertaboBoard {
-  
-  CertaboCommunicationClient _client;
-  
   Duration redudantOutputMessageDelay = Duration(milliseconds: 100);
   int _redundantOutputMessages = 2;
   int _incoomingIntegrityChecks = 2;
@@ -42,42 +39,45 @@ class CertaboBoard {
     return _incoomingIntegrityChecks;
   }
 
-  StreamController _inputStreamController;
-  StreamController _boardUpdateStreamController;
-  Stream<CertaboMessage> _inputStream;
-  Stream<Map<String, List<int>>> _boardUpdateStream;
-  List<int> _buffer;
+    
+  late StreamController<CertaboMessage> _inputStreamController;
+  late StreamController _boardUpdateStreamController;
+  late Stream<CertaboMessage> _inputStream;
+  late Stream<Map<String, List<int>>> _boardUpdateStream;
+
+  CertaboCommunicationClient? _client;
+  List<int> _buffer = [];
   CertaboBoardType _type = CertaboBoardType.Unknown;
 
-  Map<String, List<int>> _currBoard = Map.fromEntries(CertaboProtocol.squares.map((e) => MapEntry(e, CertaboProtocol.emptyFieldId)));
+  Map<String, List<int>?> _currBoard = Map.fromEntries(CertaboProtocol.squares.map((e) => MapEntry(e, CertaboProtocol.emptyFieldId)));
 
   CertaboBoardType get type {
     return _type;
   }
 
-  Map<String, List<int>> get currBoard {
+  Map<String, List<int>?> get currBoard {
     return _currBoard;
   }
 
   List<Map<String, List<int>>> _lastBoards = [];
 
-  CertaboBoard();
-
-  Future<void> init(CertaboCommunicationClient client) async {
-    _client = client;
-    _client.receiveStream.listen(_handleInputStream);
+  CertaboBoard() {
     _inputStreamController = new StreamController<CertaboMessage>();
     _boardUpdateStreamController = new StreamController<Map<String, List<int>>>();
     _inputStream = _inputStreamController.stream.asBroadcastStream();
-    _boardUpdateStream = _boardUpdateStreamController.stream.asBroadcastStream();
-    getInputStream().map(createBoardMap).listen(_newBoardState);
+    _boardUpdateStream = _boardUpdateStreamController.stream.asBroadcastStream() as Stream<Map<String, List<int>>>;
+  }
 
+  Future<void> init(CertaboCommunicationClient client) async {
+    _client = client;
+    _client!.receiveStream.listen(_handleInputStream);
+    getInputStream().map(createBoardMap).listen(_newBoardState);
     await getInputStream().first;
   }
 
   void _newBoardState(Map<String, List<int>> state) {
     // PieceId Whitelist
-    if (_type != CertaboBoardType.Tabutronic && pieceIdWhitelist != null && pieceIdWhitelist.length > 0) {
+    if (_type != CertaboBoardType.Tabutronic && pieceIdWhitelist.length > 0) {
       state = state.map((key, value) {
         if (pieceIdWhitelist.any((e) => CertaboProtocol.equalId(e, value))) {
           return MapEntry(key, value);
@@ -95,7 +95,7 @@ class CertaboBoard {
 
     if (incoomingIntegrityCheckType == IntegrityCheckType.cell) {
       _currBoard = _currBoard.map((key, value) {
-        List<int> potentialNewValue = _lastBoards.first[key];
+        List<int>? potentialNewValue = _lastBoards.first[key];
         if (_lastBoards.every((e) => CertaboProtocol.equalId(e[key], potentialNewValue))) {
           return MapEntry(key, potentialNewValue);
         }
@@ -124,20 +124,19 @@ class CertaboBoard {
   void _handleInputStream(Uint8List rawChunk) {
     List<int> chunk = rawChunk.toList();
 
-    if (_buffer == null)
-      _buffer = chunk.toList();
-    else
-      _buffer.addAll(chunk);
+    _buffer.addAll(chunk);
 
     if (_isWorking == true) return;
     while(_buffer.length >= 384) {
+      CertaboCommunicationClient? client = _client;
+      if (client == null) return;
       _isWorking = true;
       try {
         _buffer = skipToNextStart(0, _buffer);
 
         // Detect board type
         if (_type == CertaboBoardType.Unknown) {
-          switch (_client.connectionType) {
+          switch (client.connectionType) {
             case CertaboConnectionType.USB:
               _type = CertaboMessageUSB.detect(_buffer);
               break;
@@ -156,7 +155,7 @@ class CertaboBoard {
 
         // Parse message
         CertaboMessage message;
-        switch (_client.connectionType) {
+        switch (client.connectionType) {
           case CertaboConnectionType.USB:
             message = CertaboMessageUSB.parse(_type, _buffer);
             break;
@@ -199,7 +198,7 @@ class CertaboBoard {
     return _inputStream;
   }
 
-  Stream<Map<String, List<int>>> getBoardUpdateStream() {
+  Stream<Map<String, List<int>>>? getBoardUpdateStream() {
     return _boardUpdateStream;
   }
 
@@ -216,10 +215,13 @@ class CertaboBoard {
   }
 
   Future<void> _send(Uint8List message) async {
-    await _client.send(message);
+    CertaboCommunicationClient? client = _client;
+    if (client == null) return;
+
+    await client.send(message);
     for (var i = 0; i < _redundantOutputMessages; i++) {
       await Future.delayed(redudantOutputMessageDelay);
-      await _client.send(message);
+      await client.send(message);
     }
   }
   
