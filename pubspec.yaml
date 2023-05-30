@@ -1,6 +1,6 @@
 name: certabodriver
 description: A Certabo-Chessboard Driver written in pure Dart
-version: 0.0.4
+version: 0.0.5
 repository: https://github.com/mono424/certabodriver
 homepage: https://khad.im
 
